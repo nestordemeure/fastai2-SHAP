@@ -19,15 +19,6 @@ def _predict(data, model, dls):
     pred_proba = model(x_cat, x_cont).detach().to('cpu').numpy()
     return pred_proba
 
-def _one_class_shap_value(shap_values, class_index=0):
-    "Takes shap values and get the values for a single output class in the case of a multi-output model."
-    if type(shap_values) == list:
-        print("Multi-output model detected, we will display the information for the class", class_index)
-        print("use `class_index` to specify another class.")
-        return shap_values[class_index]
-    else:
-        return shap_values
-
 # https://github.com/fastai/fastai2/blob/79a9ba75864350b9d9e4278e640c8d285a805077/nbs/20_interpret.ipynb
 class ShapInterpretation():
     "Used to encapsulate bindings with the Shap interpretation library"
@@ -45,14 +36,7 @@ class ShapInterpretation():
         self.test_data = learn.dls.test_dl(test_data).all_cols
         self.shap_values = self.explainer.shap_values(self.test_data, l1_reg=False) # TODO why no L1 reg ?
         # flags used to indure the proper working of the library
-        self._js_initialized = False
-        #self.is_multi_output = type(self.shap_values) == list
-
-    def initjs(self):
-        "inits the javascript used by Shap for its plots if it has not been done already"
-        if not self._js_initialized:
-            shap.initjs()
-            self._js_initialized = True
+        self.is_multi_output = type(self.shap_values) == list
             
     def summary_plot(self, **kwargs):
         """
@@ -72,14 +56,34 @@ class ShapInterpretation():
         `class_index` is used if the model has several ouputs.
         
         For an up-to-date list of the parameters, see: https://github.com/slundberg/shap/blob/master/shap/plots/dependence.py
+        For more informations, see: https://github.com/slundberg/shap/blob/master/notebooks/plots/dependence_plot.ipynb
         """
-        shap_values = _one_class_shap_value(self.shap_values, class_index)
+        if self.is_multi_output:
+            print("Multi-output model detected, we will display the information for the class", class_index, "of", len(self.shap_values))
+            print("use the `class_index` parameter to specify another class.")
+            shap_values = self.shap_values[class_index]
+        else:
+            shap_values = self.shap_values
         # TODO why does the graph come out flat ? (overlap between train and test ?)
         return shap.dependence_plot(variable_name, shap_values, self.test_data, **kwargs)
 
-    def waterfall_plot(self, **kwargs):
-        self.initjs()
-        # TODO shap.waterfall_plot(*args, **kwargs)
+    def waterfall_plot(self, row_index=0, class_index=0, **kwargs):
+        """
+        Plots an explantion of a single prediction as a waterfall plot.
+        
+        For an up-to-date list of the parameters, see: https://github.com/slundberg/shap/blob/master/shap/plots/waterfall.py
+        """
+        if self.is_multi_output:
+            print("Multi-output model detected, we will display the information for the class", class_index, "of", len(self.shap_values))
+            print("use the `class_index` parameter to specify another class.")
+            shap_values = self.shap_values[class_index]
+            expected_value = self.explainer.expected_value[class_index]
+        else:
+            shap_values = self.shap_values
+            expected_value = self.explainer.expected_value
+        print("displaying row", row_index, "of", shap_values.shape[0])
+        feature_names = self.test_data.columns
+        shap.waterfall_plot(expected_value, shap_values[row_index,:], feature_names=feature_names, **kwargs)
 
     def force_plot(self, class_index=0, matplotlib=False, **kwargs):
         """
@@ -89,24 +93,37 @@ class ShapInterpretation():
         
         For an up-to-date list of the parameters, see: https://github.com/slundberg/shap/blob/master/shap/plots/force.py
         """
-        if type(self.shap_values) == list:
-            print("Multi-output model detected, we will display the information for the class", class_index)
+        if self.is_multi_output:
+            print("Multi-output model detected, we will display the information for the class", class_index, "of", len(self.shap_values))
             print("use the `class_index` parameter to specify another class.")
             shap_values = self.shap_values[class_index]
             expected_value = self.explainer.expected_value[class_index]
         else:
             shap_values = self.shap_values
             expected_value = self.explainer.expected_value
-        if not matplotlib: self.initjs()
+        if not matplotlib: shap.initjs()
         return shap.force_plot(expected_value, shap_values, self.test_data, matplotlib=matplotlib, **kwargs)
 
-    def image_plot(self, **kwargs):
-        self.initjs()
-        # TODO shap.image_plot(*args, **kwargs)
-
-    def decision_plot(self, **kwargs):
-        self.initjs()
-        # TODO shap.decision_plot(*args, **kwargs)
+    def decision_plot(self, class_index=0, **kwargs):
+        """
+        Visualize model decisions using cumulative SHAP values. Each colored line in the plot represents the model
+        prediction for a single observation. Note that plotting too many samples at once can make the plot unintelligible.
+        
+        For an up-to-date list of the parameters, see: https://github.com/slundberg/shap/blob/master/shap/plots/decision.py
+        For more informations, see: https://github.com/slundberg/shap/blob/master/notebooks/plots/decision_plot.ipynb
+        """
+        if self.is_multi_output:
+            print("Multi-output model detected, we will display the information for the class", class_index, "of", len(self.shap_values))
+            print("use the `class_index` parameter to specify another class.")
+            shap_values = self.shap_values[class_index]
+            expected_value = self.explainer.expected_value[class_index]
+            # TODO there is a shap.multioutput_decision_plot but it expects expected_value to be a list wich it isn't 
+            # (bug in shap?)
+            # shap.multioutput_decision_plot(self.explainer.expected_value, self.shap_values, row_index, **kwargs)
+        else:
+            shap_values = self.shap_values
+            expected_value = self.explainer.expected_value
+        shap.decision_plot(expected_value, shap_values, self.test_data, **kwargs)
 
 # learn.interpret_shap()
 
