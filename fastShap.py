@@ -19,22 +19,53 @@ def _predict(data, model, dls):
     pred_proba = model(x_cat, x_cont).detach().to('cpu').numpy()
     return pred_proba
 
+def _get_values(interpreter:ShapInterpretation, class_index:int=0)
+    "Gets `shap_value` and `expected_value`, dealing with the possibility that the model is multi-output."
+    shap_values = interpreter.shap_values
+    expected_value = interpreter.explainer.expected_value
+    if interpreter.is_multi_output:
+        print("Multi-output model detected, we will display the information for the class", class_index, "of", len(interpreter.shap_values))
+        print("use the `class_index` parameter to specify another class.")
+        shap_values = shap_values[class_index]
+        expected_value = expected_value[class_index]
+    return (shap_values, expected_value)
+
 # https://github.com/fastai/fastai2/blob/79a9ba75864350b9d9e4278e640c8d285a805077/nbs/20_interpret.ipynb
 class ShapInterpretation():
     "Used to encapsulate bindings with the Shap interpretation library"
-    def __init__(self, learn:TabularLearner, test_data:pd.DataFrame):
-        "Uses Shap value to interpret the output of a learner for some test data"
+    def __init__(self, learn:TabularLearner, test_data:pd.DataFrame, link="identity", nsamples="auto", l1_reg="auto", **kwargs):
+        """
+        Uses Shap value to interpret the output of a learner for some test data
+        
+        link : "identity" or "logit"
+            A generalized linear model link to connect the feature importance values to the model
+            output. Since the feature importance values, phi, sum up to the model output, it often makes
+            sense to connect them to the ouput with a link function where link(outout) = sum(phi).
+            If the model output is a probability then the LogitLink link function makes the feature
+            importance values have log-odds units.
+        
+        nsamples : "auto" or int
+            Number of times to re-evaluate the model when explaining each prediction.
+            More samples lead to lower variance estimates of the SHAP values.
+            
+        l1_reg : "num_features(int)", "auto", "aic", "bic", or float
+            The l1 regularization to use for feature selection (the estimation procedure is based on
+            a debiased lasso). The auto option currently uses "aic" when less that 20% of the possible sample
+            space is enumerated, otherwise it uses no regularization.
+        """
         # TODO use sample of train data as defalt test data
+        
         # extracts model and data from the learner
         self.model = learn.model
         self.dls = learn.dls
-        # create an explainer for the test data
+        # create an explainer for the model
         train_data = learn.dls.all_cols
         predict_function = partial(_predict, model=learn.model, dls=learn.dls)
-        self.explainer = shap.SamplingExplainer(predict_function, train_data)
-        #self.explainer = shap.KernelExplainer(self.pred, train_data)
+        self.explainer = shap.SamplingExplainer(predict_function, train_data, **kwargs)
+        #self.explainer = shap.KernelExplainer(self.pred, train_data, **kwargs)
+        # computes shap values for the test data
         self.test_data = learn.dls.test_dl(test_data).all_cols
-        self.shap_values = self.explainer.shap_values(self.test_data, l1_reg=False) # TODO why no L1 reg ?
+        self.shap_values = self.explainer.shap_values(self.test_data, nsamples=nsamples, l1_reg=l1_reg)
         # flags used to indure the proper working of the library
         self.is_multi_output = type(self.shap_values) == list
             
@@ -58,12 +89,7 @@ class ShapInterpretation():
         For an up-to-date list of the parameters, see: https://github.com/slundberg/shap/blob/master/shap/plots/dependence.py
         For more informations, see: https://github.com/slundberg/shap/blob/master/notebooks/plots/dependence_plot.ipynb
         """
-        if self.is_multi_output:
-            print("Multi-output model detected, we will display the information for the class", class_index, "of", len(self.shap_values))
-            print("use the `class_index` parameter to specify another class.")
-            shap_values = self.shap_values[class_index]
-        else:
-            shap_values = self.shap_values
+        shap_values, expected_value = _get_values(self, class_index)
         # TODO why does the graph come out flat ? (overlap between train and test ?)
         return shap.dependence_plot(variable_name, shap_values, self.test_data, **kwargs)
 
@@ -71,17 +97,13 @@ class ShapInterpretation():
         """
         Plots an explantion of a single prediction as a waterfall plot.
         
+        `row_index` is the index of the row in `test_data` that will be analyzed
+        `class_index` is used if the model has several ouputs.
+        
         For an up-to-date list of the parameters, see: https://github.com/slundberg/shap/blob/master/shap/plots/waterfall.py
         """
-        if self.is_multi_output:
-            print("Multi-output model detected, we will display the information for the class", class_index, "of", len(self.shap_values))
-            print("use the `class_index` parameter to specify another class.")
-            shap_values = self.shap_values[class_index]
-            expected_value = self.explainer.expected_value[class_index]
-        else:
-            shap_values = self.shap_values
-            expected_value = self.explainer.expected_value
         print("displaying row", row_index, "of", shap_values.shape[0])
+        shap_values, expected_value = _get_values(self, class_index)
         feature_names = self.test_data.columns
         shap.waterfall_plot(expected_value, shap_values[row_index,:], feature_names=feature_names, **kwargs)
 
@@ -93,14 +115,7 @@ class ShapInterpretation():
         
         For an up-to-date list of the parameters, see: https://github.com/slundberg/shap/blob/master/shap/plots/force.py
         """
-        if self.is_multi_output:
-            print("Multi-output model detected, we will display the information for the class", class_index, "of", len(self.shap_values))
-            print("use the `class_index` parameter to specify another class.")
-            shap_values = self.shap_values[class_index]
-            expected_value = self.explainer.expected_value[class_index]
-        else:
-            shap_values = self.shap_values
-            expected_value = self.explainer.expected_value
+        shap_values, expected_value = _get_values(self, class_index)
         if not matplotlib: shap.initjs()
         return shap.force_plot(expected_value, shap_values, self.test_data, matplotlib=matplotlib, **kwargs)
 
@@ -112,19 +127,10 @@ class ShapInterpretation():
         For an up-to-date list of the parameters, see: https://github.com/slundberg/shap/blob/master/shap/plots/decision.py
         For more informations, see: https://github.com/slundberg/shap/blob/master/notebooks/plots/decision_plot.ipynb
         """
-        if self.is_multi_output:
-            print("Multi-output model detected, we will display the information for the class", class_index, "of", len(self.shap_values))
-            print("use the `class_index` parameter to specify another class.")
-            shap_values = self.shap_values[class_index]
-            expected_value = self.explainer.expected_value[class_index]
-            # TODO there is a shap.multioutput_decision_plot but it expects expected_value to be a list wich it isn't 
-            # (bug in shap?)
-            # shap.multioutput_decision_plot(self.explainer.expected_value, self.shap_values, row_index, **kwargs)
-        else:
-            shap_values = self.shap_values
-            expected_value = self.explainer.expected_value
+        # NOTE there is a shap.multioutput_decision_plot but it expects expected_value to be a list wich it isn't 
+        # (bug in shap?)
+        # shap.multioutput_decision_plot(self.explainer.expected_value, self.shap_values, row_index, **kwargs)
+        shap_values, expected_value = _get_values(self, class_index)
         shap.decision_plot(expected_value, shap_values, self.test_data, **kwargs)
 
 # learn.interpret_shap()
-
-# https://shap.readthedocs.io/en/latest/
