@@ -102,8 +102,8 @@ class ShapInterpretation():
         
         For an up-to-date list of the parameters, see: https://github.com/slundberg/shap/blob/master/shap/plots/waterfall.py
         """
-        print("displaying row", row_index, "of", shap_values.shape[0])
         shap_values, expected_value = _get_values(self, class_index)
+        print("displaying row", row_index, "of", shap_values.shape[0])
         feature_names = self.test_data.columns
         shap.waterfall_plot(expected_value, shap_values[row_index,:], feature_names=feature_names, **kwargs)
 
