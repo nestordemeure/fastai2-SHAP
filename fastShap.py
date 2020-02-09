@@ -147,7 +147,3 @@ class ShapInterpretation():
         # NOTE: there is a shap.multioutput_decision_plot but it uses a single row
         shap_values, expected_value = _get_values(self, class_id)
         return shap.decision_plot(expected_value, shap_values, self.test_data, **kwargs)
-
-# TODO: add method to build directly from learner
-# learn.interpret_shap()
-# why is dependence plot flat ?
