@@ -19,7 +19,7 @@ def _predict(data, model, dls):
     pred_proba = model(x_cat, x_cont).detach().to('cpu').numpy()
     return pred_proba
 
-def _get_values(interpreter:ShapInterpretation, class_index:int=0)
+def _get_values(interpreter, class_index:int=0):
     "Gets `shap_value` and `expected_value`, dealing with the possibility that the model is multi-output."
     shap_values = interpreter.shap_values
     expected_value = interpreter.explainer.expected_value
