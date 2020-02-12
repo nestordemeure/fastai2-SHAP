@@ -2,6 +2,8 @@
 
 This repository includes bindings to use the [SHAP](https://github.com/slundberg/shap) interpretability library with [fastai2](http://dev.fast.ai/)'s tabular learner.
 
+**WARNING: This repo has now been integrated into [fastshap](https://github.com/muellerzr/fastshap). You should use it instead as it is kept up to date and gets all the bug fixes.**
+
 ## Usage
 
 To use this code, you will first need to install [SHAP](https://github.com/slundberg/shap) : `pip install shap`
